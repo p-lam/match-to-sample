@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script src="../jspsych.js"></script>
+    <script src="../plugins/jspsych-grid-stimuli.js"></script>
+    <script src="../plugins/jspsych-html-keyboard-response.js"></script>
+    <script src="../plugins/jspsych-preload.js"></script>
+    <link rel="stylesheet" href="../css/jspsych.css">
+    <meta charset="utf-8">
+  </head>
+
+  <script>
+
+  var images = ["img/black.png"];
+
+  var preload = {
+    type: 'preload',
+    auto_preload: true
+  }
+
+  function randInt(max) {
+    return Math.floor(Math.random() * max);
+  }
+
+  function intBinStr(sample, dim) {
+      const b = sample.toString(2);
+      const ps = b.padStart(dim, '0');
+      return ps;
+  }
+
+  function sample(n, dim) {
+      var samples = new Array();
+      for (let i = 0; i < n; i++) {
+          let seed = randInt(Math.pow(2,dim));
+          samples.push(intBinStr(seed));
+      }
+      return samples
+  }
+
+  function generate_stimulus(dim) {
+      var matrix = [];
+      var hash = sample(1,dim);
+
+      for (i = 0, k = -1; i < hash.length; i=i+dim) {
+        matrix.push(hash.slice(i,i+dim));
+      }
+      return matrix;
+  }
+
+  console.log(generate_stimulus(4));
+
+  var trial = {
+    type: 'grid-stimuli',
+    stimuli: jsPsych.plugins['grid-stimuli'].generate_stimulus(patter, [100,100]),
+    image_size: [60,60]
+  };
+
+  var trial_2 = {
+    type: 'html-keyboard-response',
+    stimulus: generate_stimulus(4), images
+  }
+
+  jsPsych.init({
+    timeline: [preload, trial, trial_2],
+    on_finish: function() { jsPsych.data.displayData(); }
+  });
+
+  </script>
+</html>
+

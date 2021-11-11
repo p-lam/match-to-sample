@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title> Pixel Delayed Match2Sample </title>
+        <script src="jspsych-6.3.1/jspsych.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-survey-text.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-instructions.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-fullscreen.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-survey-multi-choice.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-html-keyboard-response.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-canvas-grid.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-canvas-keyboard-response.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-html-button-response.js"></script>
+        <script src="js/jquery.js"></script>
+        <script src="js/bowser.js"></script>
+        <script src="js/sprintf.js"></script>
+        <link href="jspsych-6.3.1/css/jspsych_visualarray.css" rel="stylesheet" type="text/css"></link>
+    </head>
+    <body></body>
+    <script>
+
+        // Initialize global variables
+        var timeline = []; // Stores events in the experiment
+        var trial_ind = 1; // Trial indexing from 1
+        var block_ind = 0; // Block indexing variables: block 0 is considered to be the practice block
+        var focus = 'focus'; // Tracks if the current tab/window is the active tab/window, initially the current tab should be focused
+        var fullscr_ON = 'no'; // Tracks fullscreen activity, initially not activated
+        var redirect_timeout = 1500; // Set this so that data is saved before redirect
+
+        // 1x1 patterns samples
+        // All samples will be drawn from a sampling pool of 1000 unique patterns
+        var bin_arr = Array(26).fill(0);
+        var factors_1 = {pattern: bin_arr.fill(1,0,13)};
+        var full_design_1 = jsPsych.randomization.factorial(factors_1, 1);
+
+        // 2x2 pattern samples 
+        var factors_2 = {pattern: sampling_pool(2)};
+        var full_design_2 = jsPsych.randomization.factorial(factors_2, 1);
+
+        // 3x3 pattern samples
+        var factors_3 = {pattern: sampling_pool(3)};
+        var full_design_3 = jsPsych.randomization.factorial(factors_3, 1);
+
+        // 4x4 pattern samples
+        var factors_4 = {pattern: sampling_pool(4)};
+        var full_design_4 = jsPsych.randomization.factorial(factors_4, 1)
+
+        // Is the experiment running from a server or not? (this determines if data is saved on server or offline)
+        if (document.location.host) { // returns your host or null
+            online = true;
+        } else {
+            online = false;
+        };
+
+        // Detect visitor variables with the bowser js library (/js/bowser.js)
+        jsPsych.data.addProperties({ // Add these variables to all rows of the datafile
+            browser_name: bowser.name, browser_version: bowser.version,
+            os_name: bowser.osname, os_version: bowser.osversion,
+            tablet: String(bowser.tablet), mobile: String(bowser.mobile), // Convert explicitly to string so that "undefined" (no response) does not lead to empty cells in the datafile
+            screen_resolution: screen.width + ' x ' + screen.height,
+            window_resolution: window.innerWidth + ' x ' + window.innerHeight, // This will be updated throughout the experiment
+        });
+
+        /** FUNCTIONS TO DEFINE MATCH TO SAMPLE TASK **/
+        function blackOrWhite(c, list) {
+            var ctx = c.getContext('2d');
+
+            // Define black and white pixels
+            let blockWidth = 250;
+            var black_pixel = {color: 'rgba(0,0,0,1.0)'};
+            var white_pixel = {color: 'rgba(255,255,255,1.0)'};
+            
+            pixels = (list[0] == '1') ? [black_pixel, white_pixel] : [white_pixel, black_pixel];
+
+            for (let i=0; i < pixels.length; i++) {
+                if (i == 0) {
+                    ctx.fillStyle = pixels[i].color;
+                    ctx.fillRect(0,0, blockWidth, blockWidth)
+                    ctx.strokeStyle = '#BCBCBC';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(0,0,blockWidth,blockWidth);
+                } else {
+                    ctx.fillStyle = pixels[i].color;
+                    console.log(pixels[i].color);
+                    ctx.fillRect(blockWidth * 2, 0, blockWidth, blockWidth)
+                    ctx.strokeStyle = '#BCBCBC';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(blockWidth * 2, 0,blockWidth,blockWidth);
+                }
+            }
+        }
+        
+        // Draws a single checkerboard pattern on HTML Canvas
+        function drawHash(c, hash, dim) {
+            var ctx = c.getContext('2d');
+
+            let blockWidth = 250/dim; 
+            for (let i = 0; i < dim; i++) {
+                for (let j = 0; j < dim; j++) {
+                    if (hash[i*dim + j] == 1) {
+                        ctx.fillStyle = 'rgba(0,0,0,1.0)'
+                    } else if (hash[i*dim + j] == 0) {
+                        ctx.fillStyle = 'rgba(255,255,255,1.0)';
+                    }
+
+                    ctx.fillRect(blockWidth*j, blockWidth*i, blockWidth, blockWidth);
+                    ctx.strokeStyle = '#BCBCBC';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(blockWidth*j, blockWidth*i, blockWidth, blockWidth);
+                }
+            }
+        }
+        
+        // Draws three checkerboard pattern for match to sample task
+        function drawHashes(c, hashList, dim) { // Receive a list of patterns represented as hashes, one of which was presented in the previous trial
+            var ctx = c.getContext('2d');
+            var hash1 = hashList[0];
+            var hash2 = hashList[1];
+            var hash3 = hashList[2];
+
+            // Draw first checkerboard option
+            let blockWidth = 250 / dim;
+            for (let i = 0; i < dim; i++) {
+                for (let j = 0; j < dim; j++) {
+                    if (hash1[i * dim + j] == '1') {
+                        ctx.fillStyle = 'rgba(0,0,0,1.0)'
+                    } else if (hash1[i * dim + j] == '0') {
+                        ctx.fillStyle = 'rgba(255,255,255,1.0)';
+                    }
+
+                    ctx.fillRect(blockWidth*j, blockWidth*i, blockWidth, blockWidth);
+                    ctx.strokeStyle = '#BCBCBC';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(blockWidth*j, blockWidth*i, blockWidth, blockWidth);
+                }
+            }
+            
+            // Draw second checkerboard option
+            for (let i = 0; i < dim; i++) {
+                var k = 0;
+                for (let j = dim + 2; j < 2*dim + 2; j++) {
+                    if (hash2[i * dim + k] == '1') {
+                        ctx.fillStyle = 'rgba(0,0,0,1.0)'
+                    } else if (hash2[i * dim + k] == '0') {
+                        ctx.fillStyle = 'rgba(255,255,255,1.0)';
+                    }
+
+                    ctx.fillRect(blockWidth*j, blockWidth*i, blockWidth, blockWidth);
+                    ctx.strokeStyle = '#BCBCBC';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(blockWidth*j, blockWidth*i, blockWidth, blockWidth);
+                    k += 1;
+                }
+            }
+
+            // Draw third checkerboard option
+            for (let i = 0; i < dim; i++) {
+                var k = 0;
+                for (let j = 2 * dim + 4; j < 3 * dim + 4; j++) {
+                    if (hash3[i * dim + k] == '1') {
+                        ctx.fillStyle = 'rgba(0,0,0,1.0)'
+                    } else if (hash3[i * dim + k] == '0') {
+                        ctx.fillStyle = 'rgba(255,255,255,1.0)';
+                    }
+
+                    ctx.fillRect(blockWidth*j, blockWidth*i, blockWidth, blockWidth);
+                    ctx.strokeStyle = '#BCBCBC';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(blockWidth*j, blockWidth*i, blockWidth, blockWidth);
+                    k += 1;
+                }
+            }
+        }
+
+        // Returns a random integer between 0 and max 
+        function randInt(max) {
+            return Math.floor(Math.random() * max);
+        }
+
+        // Padding can be 16 bits (4x4), 9 bits (3x3), 4 bits (2x2), 1 bit
+        function intBinStr(sample, pad) {
+            var b = sample.toString(2);
+            const ps = b.padStart(pad, '0');
+            return ps 
+        }
+
+        // Returns a sample from all combinations of a m x m matrix given m 
+        function sample(dim) {
+            var sample;
+            var ncells = dim * dim; 
+            var seed = randInt(Math.pow(2,ncells));
+            sample = intBinStr(seed, ncells);
+            return sample
+        }
+
+        // Generate a smaller subset of samples
+        function sampling_pool(dim, num=1000) {
+            samples = [];
+            for (let i = 0; i < num; i++) {
+                s = sample(dim)
+                samples.push(s)
+            }
+            return samples
+        }
+
+        // Sampling with exceptions
+        function sampleWithExceptions(exception, dim) {
+            var s;
+            // Sample until we get twp hashes separate than the one we have
+            while(1) {
+                s = sample(dim);
+                if (s != exception) {
+                    break;
+                }
+            }
+
+            return s
+        }
+
+        // Array shuffling for variability using Fisher Yates
+        function shuffle(arr) {
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                const temp = arr[i];
+                arr[i] = arr[j];
+                arr[j] = temp;
+            }
+            return arr
+        }
+
+        // Saving UTC timestamp
+        function getTime() {
+            var date = new Date();
+            return date.toISOString();
+        }
+
+        /** DEFINING INDIVIDUAL TRIALS **/
+
+        // Welcome message trial. Also: end the experiment if browser is not Chrome or Firefox
+        var welcome = {
+            type: 'instructions',
+            pages: ['<p>Welcome to the experiment.</p>' + '<p>Press <b>Next</b> to begin.</p>'],
+            show_clickable_nav: true,
+            allow_backward: false,
+            button_label_next: 'Next',
+            on_start: function(trial){
+                if (bowser.name == 'Firefox' || bowser.name == 'Chrome'){
+                    trial.pages = ['<p>Welcome to the experiment.</p>' + '<p>Press <b>Next</b> to begin.</p>'];
+                } else {
+                    trial.pages = ['<p>This experiment requires the Chrome or Firefox webbrowser.</p>'];
+                    setTimeout(function(){location.href="html/not_supported.html"}, 2000);
+                }
+            }
+        };
+
+         // these events turn fullscreen mode on in the beginning and off at the end, if enabled (see experiment_variables.js)
+        var fullscr = {
+            type: 'fullscreen',
+            fullscreen_mode: true,
+            message: '<p>The experiment will switch to fullscreen mode when you push the button below. </p>',
+            button_label: 'Next',
+        };
+
+        var fullscr_off = {
+            type: 'fullscreen',
+            fullscreen_mode: false,
+            button_label: 'Next',
+        };
+
+        // informed consent trial. The informed_consent_text variable comes from /configuration/text_variables.js
+        var consent = {
+            type: 'instructions',
+            pages: function() {
+                pageOne = '<p>This is a research project conducted at Worcester Polytechnic Institute. In this experiment, you will be shown checkerboard patterns and asked to identify them given several options. The experiment will take approximately 20 minutes to complete. The data we collect during the experiment are not linked to potentially identifying information and will solely be used for research purposes.</p>' +
+                '<p>By clicking “I agree”, you affirm that you understand the nature of your participation in this research and are at least 18 years of age. If you do not wish to participate, please close this window.</p>'
+                return [pageOne]
+            },
+            show_clickable_nav: true,
+            button_label_next: 'I agree',
+            allow_backward: false
+        };
+
+        // if enabled below, get participant's id from participant and add it to the datafile.
+        // the prompt is declared in the configuration/text_variables.js file
+        var participant_id = {
+            type: 'survey-text',
+            questions: [
+                {
+                    prompt: "Enter subject name",
+                    required: true
+                }, 
+                {
+                    prompt: "Enter subject age",
+                    required: true
+                },
+            ],
+            button_label: 'Next',
+            on_finish: function(data) {
+                var responses = JSON.parse(data.responses);
+                jsPsych.data.addProperties({
+                    name: responses.Q0,
+                    age: responses.Q1
+                });
+            }
+        };
+
+        // Record participants' gender
+        var gender = {
+            type: 'survey-multi-choice',
+            questions: [
+                {
+                prompt: "What is your gender?",
+                options: ["Male", "Female", "Other", "Prefer not to say"],
+                required: true
+                }, 
+            ],
+            button_label: 'Next',
+            on_finish: function(data) {
+                var responses = JSON.parse(data.responses);
+                jsPsych.data.addProperties({
+                    gender: responses.Q0
+                });
+            }
+        };
+
+        // Present instructions for match-to-sample task 
+        var instructions = {
+            type: 'instructions',
+            pages: function(){
+                pageOne = '<p><b>INSTRUCTIONS</b><br><br>This is a match to sample task. On each trial, you will be shown a checkerboard pattern. You will then be shown three patterns, one of which corresponds to the previous one.</p>' + '<p>You have to <b>indicate the pattern</b> you last saw using the <b>keys "1" (Left pattern), "2" (Middle pattern), and "3" (Right pattern)</b>.</p>'
+                pageTwo = '<p>We will now start with a practice round to ensure you have understood the task. </p>'
+                return [pageOne, pageTwo]
+            },
+            show_clickable_nav: true,
+            button_label_previous: 'Back',
+            button_label_next: 'Next',
+            allow_backward: true
+        };
+
+        // start of each block
+        // the start message is declared in the configuration/text_variables.js file
+        var block_start = {
+            type: 'html-keyboard-response',
+            stimulus: '<p>Press <b>enter</b> to begin.</p></br>',
+            choices: ['Enter']
+        };
+
+        // get ready for beginning of block
+        // the get ready message is declared in the configuration/text_variables.js file
+        var block_get_ready = {
+            type: 'html-keyboard-response',
+            stimulus: '<p>Get ready...</p>',
+            choices: jsPsych.NO_KEYS,
+            trial_duration: 2000,
+        };
+
+        var test_start = {
+            type: 'html-keyboard-response',
+            stimulus: '<p>You have completed the trial round. Press <b>enter</b> to begin the experiment.</p><br>',
+            choices: ['Enter'],
+            on_finish: function(data) {
+                block_ind += 1;
+            }
+        };
+
+        // Display inter-trial fixation cross
+        var fixation = {
+            type: 'html-keyboard-response',
+            stimulus: '<div style="font-size:40px;">+</div>',
+            choices: jsPsych.NO_KEYS,
+            trial_duration: 1000,
+            on_finish: function(data) {
+                data.label = 0;
+            }
+        };
+
+        // Display notification for finishing a round 
+        var round_end = {
+            type: 'html-button-response',
+            stimulus: function() {
+                var last_trial_data = jsPsych.data.get().last(2).values()[0];
+                return '<p>You have completed Round ' + block_ind + '/4! The next part of the experiment will start in <span id="clock">1:00</span>.';
+                },
+            choices: ['Continue'],
+            on_load: function(){
+                var wait_time = 1 * 60 * 1000; // in milliseconds
+                var start_time = performance.now();
+                document.querySelector('button').disabled = true;
+                var interval = setInterval(function(){
+                var time_left = wait_time - (performance.now() - start_time);
+                var minutes = Math.floor(time_left / 1000 / 60);
+                var seconds = Math.floor((time_left - minutes*1000*60)/1000);
+                var seconds_str = seconds.toString().padStart(2,'0');
+                document.querySelector('#clock').innerHTML = minutes + ':' + seconds_str
+                    if(time_left <= 0){
+                        document.querySelector('#clock').innerHTML = "0:00";
+                        document.querySelector('button').disabled = false;
+                        clearInterval(interval);
+                    }
+                }, 250)
+            },
+            on_finish: function(data) {
+                block_ind += 1; // Increment round number
+                trial_ind = 1;  // Reset trial number
+            }
+        }
+
+        // Display 1x1 patterns
+        // The match-to-sample section will only have two options: black or white 
+        var display_stimulus1 = {
+            timeline: [{
+                type: 'canvas-grid',
+                stimulus: function(c) {
+                    var hash = jsPsych.timelineVariable('pattern');
+                    console.log("Hash: " + hash);
+                    drawHash(c,[hash],1);
+                },
+            trial_duration: 2000
+            }],
+            timeline_variables: full_design_1,
+            sample: {
+                type: 'with-replacement',
+                size: 1
+            },
+            on_finish: function(data){
+                // Save the stimulus and trial number in the data
+                data.pattern = jsPsych.timelineVariable('pattern');
+                data.trial_i = trial_ind;
+                data.block_i = block_ind;
+                // Generate two other stimuli for match to sample task
+                var choices = (data.pattern == 1) ? [data.pattern, 0] : [data.pattern, 1];        
+                data.choices = shuffle(choices);
+                // Save event label
+                data.label = 1;
+                // Save UTC timestamp
+                data.time = getTime();
+
+            }
+        };
+
+        var match_to_sample1 = {
+            timeline: [{
+                type: 'canvas-keyboard-response',
+                stimulus: function(c) {
+                    // Get multiple choice options from previous trial
+                    var last_trial_data = jsPsych.data.get().last(2).values()[0];
+                    var choices = last_trial_data['choices'];
+                    // Display stimulus
+                    blackOrWhite(c,choices);
+                    // Label images 
+                    var ctx = c.getContext('2d');
+                    ctx.fillStyle = 'rgb(0,0,0,1.0)';
+                    ctx.font = '15px serif';
+                    ctx.fillText('1', 120, 280);
+                    ctx.fillText('2', 620, 280);
+                },
+                canvas_size: [280,750],
+                selection: ['1','2'],
+                prompt: '<p>Which pattern did you last see?</p>',
+                trial_duration: 2000,
+            }],
+            on_finish: function(data) {
+                // Retrieve index of correct pattern among multiple choice options
+                var previous_trial = jsPsych.data.get().last(3).values()[0];
+                var correct_pattern = previous_trial['pattern'];
+                var options = previous_trial['choices'];
+                var correct_idx = String(options.indexOf(correct_pattern) + 1);
+                // Determine if user response is correct
+                data.correct = (jsPsych.pluginAPI.compareKeys(data.response, correct_idx)) ? 1 : 0;
+                // Save event label
+                data.label = 2;
+                // Save stimuli and trial number into data
+                data.pattern = correct_pattern;
+                data.choices = options;
+                data.trial_i = trial_ind; 
+                data.block_i = block_ind;
+                trial_ind += 1;
+
+                // Save UTC timestamp
+                data.time = getTime();
+            }
+        };
+
+        // Display 2x2 checkerboard patterns
+        // The match-to-sample section will have three options from now on 
+        var display_stimulus2 = {
+            timeline: [{
+                type: 'canvas-grid',
+                stimulus: function(c) {
+                    var hash = jsPsych.timelineVariable('pattern');
+                    drawHash(c,hash,2);
+                },
+            trial_duration: 2000
+            }],
+            timeline_variables: full_design_2,
+            sample: {
+                type: 'with-replacement',
+                size: 1
+            },
+            on_finish: function(data){
+                // Save the stimulus and trial number in the data
+                data.pattern = jsPsych.timelineVariable('pattern');
+                data.trial_i = trial_ind;
+                data.block_i = block_ind;
+                // Generate two other stimuli for match to sample task
+                var choices = [data.pattern, sampleWithExceptions(data.pattern, 2), sampleWithExceptions(data.pattern,2)];       
+                data.choices = shuffle(choices); 
+                // Save event label
+                data.label = 1;
+                // Save UTC timestamp
+                data.time = getTime();
+            }
+        };
+
+        var match_to_sample2 = {
+            timeline: [{
+            type: 'canvas-keyboard-response',
+            stimulus: function(c) {
+                var last_trial_data = jsPsych.data.get().last(2).values()[0];
+                var choices = last_trial_data['choices'];
+                drawHashes(c,choices,2);
+                console.log(choices);
+
+                // Draw labels for each pattern mcq option
+                var ctx = c.getContext('2d');
+                ctx.fillStyle = 'rgb(0,0,0,1.0)';
+                ctx.font = '15px serif';
+                ctx.fillText('1', 120, 280);
+                ctx.fillText('2', 620, 280);
+                ctx.fillText('3', 1122, 280);
+            },
+            canvas_size: [280,1258],
+            selection: ['1','2','3'],
+            prompt: '<p>Which pattern did you last see?</p>',
+            trial_duration: 2000,
+            }],
+            on_finish: function(data) {
+                // Retrieve data regarding stimulus and multiple choice selections
+                var previous_trial = jsPsych.data.get().last(3).values()[0];
+                var correct_pattern = previous_trial['pattern'];
+                var options = previous_trial['choices'];
+                var correct_idx = String(options.indexOf(correct_pattern) + 1); // Find the index of the correct hash out of the mcq options
+                // Determine if user responded correctly
+                data.correct = (jsPsych.pluginAPI.compareKeys(data.response, correct_idx)) ? 1 : 0;
+                // Save event label
+                data.label = 2;
+                // Save stimuli and trial number into data
+                data.pattern = correct_pattern;
+                data.choices = options;
+                data.trial_i = trial_ind; 
+                data.block_i = block_ind;
+                trial_ind += 1;
+                // Save UTC timestamp
+                data.time = getTime();
+            }
+        };
+
+        // Display 3x3 checkerboard pattern
+        var display_stimulus3 = {
+            timeline: [{
+                type: 'canvas-grid',
+                stimulus: function(c) {
+                    var hash = jsPsych.timelineVariable('pattern');
+                    drawHash(c,hash,3);
+                },
+            trial_duration: 2000
+            }],
+            timeline_variables: full_design_3,
+            sample: {
+                type: 'with-replacement',
+                size: 1
+            },
+            on_finish: function(data){
+                // Save the stimulus and trial number in the data
+                data.pattern = jsPsych.timelineVariable('pattern');
+                data.trial_i = trial_ind;
+                data.block_i = block_ind;
+                // Generate two other stimuli for match to sample task
+                var choices = [data.pattern, sampleWithExceptions(data.pattern, 3), sampleWithExceptions(data.pattern,3)];        
+                data.choices = shuffle(choices);
+                // Save event label
+                data.label = 1;
+                // Save UTC timestamp
+                data.time = getTime();
+            }
+        };
+
+        var match_to_sample3 = {
+            timeline: [{
+            type: 'canvas-keyboard-response',
+            stimulus: function(c) {
+                var last_trial_data = jsPsych.data.get().last(2).values()[0];
+                var choices = last_trial_data['choices'];
+                console.log(choices);
+                drawHashes(c,choices,3);
+
+                // Draw labels for each pattern mcq option
+                var ctx = c.getContext('2d');
+                ctx.fillStyle = 'rgb(0,0,0,1.0)';
+                ctx.font = '15px serif';
+                ctx.fillText('1', 120, 280);
+                ctx.fillText('2', 535, 280);
+                ctx.fillText('3', 955, 280);
+                ctx.fillStyle = 'black';
+
+            },
+            canvas_size: [280,1085],
+            // canvas_size: [280,1258],
+            selection: ['1','2','3'],
+            prompt: '<p>Which pattern did you last see?</p>',
+            trial_duration: 2000,
+            }],
+            on_finish: function(data) {
+                // Check if response is corrects
+                var previous_trial = jsPsych.data.get().last(3).values()[0];
+                var correct_pattern = previous_trial['pattern'];
+                var options = previous_trial['choices'];
+                var correct_idx = String(options.indexOf(correct_pattern) + 1);
+                // Determine if user response is correct
+                data.correct = (jsPsych.pluginAPI.compareKeys(data.response, correct_idx)) ? 1 : 0;
+                // Save event label
+                data.label = 2;
+                // Save stimuli and trial number into data
+                data.pattern = correct_pattern;
+                data.choices = options;
+                data.trial_i = trial_ind; 
+                data.block_i = block_ind;
+                trial_ind += 1;
+                // Save UTC timestamp
+                data.time = getTime();
+            }
+        };
+
+        var display_stimulus4 = {
+            timeline: [{
+                type: 'canvas-grid',
+                stimulus: function(c) {
+                    var hash = jsPsych.timelineVariable('pattern');
+                    drawHash(c,hash,4);
+                    console.log(hash);
+                },
+
+            trial_duration: 2000
+            }],
+            timeline_variables: full_design_4,
+            sample: {
+                type: 'with-replacement',
+                size: 1
+            },
+            on_finish: function(data){
+                // Save the stimulus and trial number in the data
+                data.pattern = jsPsych.timelineVariable('pattern');
+                data.trial_i = trial_ind;
+                data.block_i = block_ind;
+                // Generate two other stimuli for match to sample task
+                var choices = [data.pattern, sampleWithExceptions(data.pattern, 4), sampleWithExceptions(data.pattern,4)];       
+                data.choices = shuffle(choices); 
+                // Save event label
+                data.label = 1;
+                // Save UTC timestamp
+                data.time = getTime();
+            }
+        };
+
+        var match_to_sample4 = {
+            timeline: [{
+            type: 'canvas-keyboard-response',
+            stimulus: function(c) {
+                var last_trial_data = jsPsych.data.get().last(2).values()[0];
+                var choices = last_trial_data['choices'];
+                drawHashes(c,choices,4);
+
+                // Draw labels for each pattern mcq option
+                var ctx = c.getContext('2d');
+                ctx.fillStyle = 'rgb(0,0,0,1.0)';
+                ctx.font = '15px serif';
+                ctx.fillText('1', 120, 280);
+                ctx.fillText('2', 495, 280);
+                ctx.fillText('3', 870, 280);
+                ctx.fillStyle = 'black';
+
+            },
+            selection: ['1','2','3'],
+            prompt: '<p>Which pattern did you last see?</p>',
+            trial_duration: 2000,
+            }],
+            on_finish: function(data) {
+                // Check if response is corrects
+                var previous_trial = jsPsych.data.get().last(3).values()[0];
+                var correct_pattern = previous_trial['pattern'];
+                var options = previous_trial['choices'];
+                var correct_idx = String(options.indexOf(correct_pattern) + 1);
+                // Determine if user response is correct
+                data.correct = (jsPsych.pluginAPI.compareKeys(data.response, correct_idx)) ? 1 : 0;
+                // Save event label
+                data.label = 2;
+                // Save stimuli and trial number into data
+                data.pattern = correct_pattern;
+                data.choices = options;
+                data.trial_i = trial_ind; 
+                data.block_i = block_ind;
+                trial_ind += 1;
+                // Save UTC timestamp
+                data.time = getTime();
+            }
+        }; 
+        
+        var trial_feedback = {
+            type: 'html-keyboard-response',
+            choices: jsPsych.NO_KEYS,
+            trial_duration: 750,
+            stimulus: function() {
+                var last_trial_data = jsPsych.data.get().last(1).values()[0];
+                if (last_trial_data['correct']) {
+                    return '<p> Correct response </p>'
+                } else {
+                    if (last_trial_data['response'] == null) {
+                        return '<p> Too slow </p>'
+                    } else {
+                        return '<p> Incorrect response </p>'
+                    }
+                }
+            }
+        };
+
+        var experiment_end = {
+            type: "html-keyboard-response",
+            stimulus: '<p>You have completed the experiment! Results will be displayed shortly...</p>',
+            choices: jsPsych.NO_KEYS,
+            trial_duration: 2000
+        };
+
+        var experiment_feedback = {
+            type: 'html-keyboard-response',
+            trial_duration: 15000,
+            stimulus: function() {
+                // Calculate performance
+                var trials = jsPsych.data.get().filter({
+                    trial_type: 'canvas-keyboard-response',
+                });
+
+                var correct_trials = trials.filter({correct:1});
+                var accuracy = Math.round(correct_trials.count() / trials.count() * 100);
+                var rt = Math.round(correct_trials.select('rt').mean());
+
+                return `<p>You responded correctly on ${accuracy}% of the trials.</p>
+                    <p>Your average response time was ${rt}ms.</p>
+                    <p>Press any key to complete the experiment. Thank you!</p>`;
+            },
+            on_start: function(data) {
+                var name = jsPsych.data.get().last(1).values()[0]['name'];
+                var full_data = jsPsych.data.get();
+                var ignore_cols = ['internal_node_id','tablet','mobile','trial_index'];
+                // Filter by trial type
+                var selected_data = jsPsych.data.get().filterCustom(function(trial) {
+                    // Store data only from the following trial types
+                    if (trial.label != null) {
+                        if (trial.trial_type == ('canvas-keyboard-response') || ('canvas-grid') || ('html-keyboard-response')) {
+                            return trial.trial_type; 
+                        }
+                    }
+                }).ignore(ignore_cols);
+                var selected_vals = selected_data.values();
+                var arr = ['name', 'age', 'gender', 'label', 'block_i', 'trial_i', 'time', 'time_elapsed', 'rt', 'pattern', 'choices', 'response', 'correct', 'trial_type'];
+                function foo(item) {
+                    new_obj[item] = obj[item];
+                    return new_obj
+                }
+                for (let i = 0; i < selected_vals.length; i++) {
+                    obj = selected_vals[i];
+                    new_obj = {};
+                    arr.forEach(foo);
+                    selected_data.values()[i] = new_obj;
+                }
+                if (!online) {
+                    selected_data.localSave('csv','m2s_data_' + name + '.csv');
+                }
+            }
+        };
+
+        function appendData(filename, filedata) {
+            $.ajax({
+                type: 'post',
+                cache: false,
+                url: 'php/save_data_append.php',
+                data: {
+                    filename: filename,
+                    filedata:filedata
+                },
+            });
+        };
+
+        // Start sequence when user first joins
+        var start_procedure = {
+            timeline: [welcome, consent, participant_id, gender, fullscr, instructions, block_start, block_get_ready]
+        }
+
+        // Practice round 
+        var trial_procedure = {
+            timeline: [fixation, display_stimulus1, fixation, match_to_sample1, trial_feedback],
+            repetitions: 2
+        }
+
+        // Start sequence prior to experiment
+        var experiment_start = {
+            timeline: [test_start, block_get_ready]
+        }
+
+        timeline.push(start_procedure, trial_procedure, experiment_start);
+
+        var display_stimulus = [display_stimulus1, display_stimulus2, display_stimulus3, display_stimulus4];
+        var match_to_sample = [match_to_sample1, match_to_sample2, match_to_sample3, match_to_sample4];
+        
+        var test_procedures = [];
+        for (let i = 0; i < 4; i++) {
+            // For testing
+            // var reps =2;
+
+            // 35 trials for 1x1, 55 for the rest
+            var reps = (i > 0) ? 55 : 35;
+            test_procedures[i] = {
+                timeline: [fixation, display_stimulus[i], fixation, match_to_sample[i], trial_feedback],
+                repetitions: reps
+            }
+        }
+
+        for (let i = 0; i < 4; i++) {
+            timeline.push(test_procedures[i]);
+            if (i < 3) {
+                // timeline.push(round_end);
+            } else {
+                timeline.push(experiment_end, experiment_feedback);
+            }
+        }
+        
+        jsPsych.init({
+            timeline:timeline,
+            on_finish: function() {
+                jsPsych.data.displayData(); // comment out if you do not want to display results at the end of task
+            }
+        });
+    </script>
+</html>
